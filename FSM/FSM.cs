@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -7,6 +8,7 @@ using Microsoft.ServiceFabric.Actors;
 using Microsoft.ServiceFabric.Actors.Runtime;
 using Microsoft.ServiceFabric.Actors.Client;
 using FSM.Interfaces;
+using Stateless;
 
 namespace FSM
 {
@@ -21,6 +23,13 @@ namespace FSM
     [StatePersistence(StatePersistence.Persisted)]
     internal class FSM : Actor, IFSM
     {
+        private StateMachine<State, Trigger> machine;
+        private StateMachine<State, Trigger>.TriggerWithParameters<string> assignTrigger;
+        private State state;
+
+        enum State { Open, Assigned, Deferred, Resolved, Closed }
+        enum Trigger { Assign, Defer, Resolve, Close }
+
         /// <summary>
         /// Initializes a new instance of FSM
         /// </summary>
@@ -29,43 +38,111 @@ namespace FSM
         public FSM(ActorService actorService, ActorId actorId)
             : base(actorService, actorId)
         {
+            ActorEventSource.Current.ActorMessage(this, $"Contructored called: {this.GetActorId()}");
+        }
+
+        protected override Task OnDeactivateAsync()
+        {
+            ActorEventSource.Current.ActorMessage(this, $"Actor deactivated: {this.GetActorId()}");
+            ActorEventSource.Current.ActorMessage(this, $"Actor State deactivated: {this.GetActorId()}, {this.state}");
+
+            return base.OnDeactivateAsync();
         }
 
         /// <summary>
         /// This method is called whenever an actor is activated.
         /// An actor is activated the first time any of its methods are invoked.
         /// </summary>
-        protected override Task OnActivateAsync()
+        protected override async Task OnActivateAsync()
         {
-            ActorEventSource.Current.ActorMessage(this, "Actor activated.");
+            ActorEventSource.Current.ActorMessage(this, $"Actor activated: {this.GetActorId()}");
 
-            // The StateManager is this actor's private state store.
-            // Data stored in the StateManager will be replicated for high-availability for actors that use volatile or persisted state storage.
-            // Any serializable object can be saved in the StateManager.
-            // For more information, see https://aka.ms/servicefabricactorsstateserialization
+            var savedState = await this.StateManager.TryGetStateAsync<State>("state");
+            if (savedState.HasValue)
+            {
+                // has started processing
+                this.state = savedState.Value;
+            }
+            else
+            {
+                // first load.
+                this.state = State.Open;
+            }
 
-            return this.StateManager.TryAddStateAsync("count", 0);
+            ActorEventSource.Current.ActorMessage(this, $"Actor state at activation: {this.GetActorId()}, {this.state}");
+
+            machine = new StateMachine<State, Trigger>(() => this.state, s => this.state = s);
+
+            assignTrigger = machine.SetTriggerParameters<string>(Trigger.Assign);
+
+            machine.Configure(State.Open)
+                .Permit(Trigger.Assign, State.Assigned);
+
+            machine.Configure(State.Assigned)
+                .SubstateOf(State.Open)
+                .OnEntryFromAsync(assignTrigger, assignee => OnAssigned(assignee))
+                .PermitReentry(Trigger.Assign)
+                .Permit(Trigger.Close, State.Closed)
+                .Permit(Trigger.Defer, State.Deferred)
+                .OnExitAsync(() => OnDeassigned());
+
+
+
+            machine.Configure(State.Deferred)
+                .OnEntryAsync(() => this.StateManager.SetStateAsync<string>("assignee", null))
+                .Permit(Trigger.Assign, State.Assigned);
         }
 
-        /// <summary>
-        /// TODO: Replace with your own actor method.
-        /// </summary>
-        /// <returns></returns>
-        Task<int> IFSM.GetCountAsync(CancellationToken cancellationToken)
+
+        public async Task Close(CancellationToken cancellationToken)
         {
-            return this.StateManager.GetStateAsync<int>("count", cancellationToken);
+            await machine.FireAsync(Trigger.Close);
+
+            Debug.Assert(state == machine.State);
+            await this.StateManager.SetStateAsync("state", machine.State);
         }
 
-        /// <summary>
-        /// TODO: Replace with your own actor method.
-        /// </summary>
-        /// <param name="count"></param>
-        /// <returns></returns>
-        Task IFSM.SetCountAsync(int count, CancellationToken cancellationToken)
+        public async Task Assign(string assignee, CancellationToken cancellationToken)
         {
-            // Requests are not guaranteed to be processed in order nor at most once.
-            // The update function here verifies that the incoming count is greater than the current count to preserve order.
-            return this.StateManager.AddOrUpdateStateAsync("count", count, (key, value) => count > value ? count : value, cancellationToken);
+            await machine.FireAsync(assignTrigger, assignee);
+
+            Debug.Assert(state == machine.State);
+            await this.StateManager.SetStateAsync("state", machine.State);
+        }
+
+        public async Task<bool> CanAssign(CancellationToken cancellationToken)
+        {
+            Debug.Assert(state == machine.State);
+            return machine.CanFire(Trigger.Assign);
+        }
+
+        public async Task Defer(CancellationToken cancellationToken)
+        {
+            await machine.FireAsync(Trigger.Defer);
+
+            Debug.Assert(state == machine.State);
+            await this.StateManager.SetStateAsync("state", machine.State, cancellationToken);
+        }
+
+        async Task OnAssigned(string assignee)
+        {
+            var _assignee = await this.StateManager.TryGetStateAsync<string>("assignee");
+            if (_assignee.HasValue && assignee != _assignee.Value)
+                await SendEmailToAssignee("Don't forget to help the new employee!");
+
+            await this.StateManager.SetStateAsync("assignee", assignee);
+            await SendEmailToAssignee("You own it.");
+        }
+
+        async Task OnDeassigned()
+        {
+            await SendEmailToAssignee("You're off the hook.");
+        }
+
+        async Task SendEmailToAssignee(string message)
+        {
+            var assignee = await this.StateManager.GetStateAsync<string>("assignee");
+            Console.WriteLine("{0}, RE {1}", assignee, message);
         }
     }
 }

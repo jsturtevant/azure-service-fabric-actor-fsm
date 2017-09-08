@@ -22,7 +22,10 @@ namespace FSM
                 // For more information, see https://aka.ms/servicefabricactorsplatform
 
                 ActorRuntime.RegisterActorAsync<FSM>(
-                   (context, actorType) => new ActorService(context, actorType)).GetAwaiter().GetResult();
+                   (context, actorType) => new ActorService(context, actorType, settings: new ActorServiceSettings()
+                   {
+                       ActorGarbageCollectionSettings = new ActorGarbageCollectionSettings(10, 5)
+                   })).GetAwaiter().GetResult();
 
                 Thread.Sleep(Timeout.Infinite);
             }

@@ -13,17 +13,9 @@ namespace FSM.Interfaces
     /// </summary>
     public interface IFSM : IActor
     {
-        /// <summary>
-        /// TODO: Replace with your own actor method.
-        /// </summary>
-        /// <returns></returns>
-        Task<int> GetCountAsync(CancellationToken cancellationToken);
-
-        /// <summary>
-        /// TODO: Replace with your own actor method.
-        /// </summary>
-        /// <param name="count"></param>
-        /// <returns></returns>
-        Task SetCountAsync(int count, CancellationToken cancellationToken);
+        Task Close(CancellationToken cancellationToken);
+        Task Assign(string assignee, CancellationToken cancellationToken);
+        Task<bool> CanAssign(CancellationToken cancellationToken);
+        Task Defer(CancellationToken cancellationToken);
     }
 }

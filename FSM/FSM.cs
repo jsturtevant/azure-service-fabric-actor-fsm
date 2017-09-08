@@ -1,4 +1,6 @@
-﻿using System;
+﻿//example modified to work in Azure Service Fabric from https://github.com/dotnet-state-machine/stateless/tree/dev/example/BugTrackerExample 
+
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -48,6 +50,14 @@ namespace FSM
 
             return base.OnDeactivateAsync();
         }
+
+        //protected override async Task OnPostActorMethodAsync(ActorMethodContext actorMethodContext)
+        //{
+        //    await base.OnPostActorMethodAsync(actorMethodContext);
+            
+        //    //could call the statemachine save here to make sure every method gets called.
+        //    await this.StateManager.SetStateAsync("state", machine.State);
+        //}
 
         /// <summary>
         /// This method is called whenever an actor is activated.

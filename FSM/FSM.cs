@@ -75,8 +75,9 @@ namespace FSM
             }
             else
             {
-                // first load.
+                // first load ever initalize
                 this.state = State.Open;
+                await this.StateManager.SetStateAsync<State>("state", this.state);
             }
 
             ActorEventSource.Current.ActorMessage(this, $"Actor state at activation: {this.GetActorId()}, {this.state}");

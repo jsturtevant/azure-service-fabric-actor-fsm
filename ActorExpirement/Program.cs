@@ -15,12 +15,11 @@ namespace ActorExpirement
     {
         static async Task Main(string[] args)
         {
-            ActorId actorId = new ActorId("test");
-
+            ActorId actorId = new ActorId(Guid.NewGuid().ToString());
             // This only creates a proxy object, it does not activate an actor or invoke any methods yet.
             IFSM actor = ActorProxy.Create<IFSM>(actorId, new Uri("fabric:/ActorFSM/FSMActorService"));
 
-            Console.WriteLine("running actor 1");
+            Console.WriteLine($"Running actor 1 [{actorId}] through FSM states.");
             var token = new CancellationToken();
             await actor.Assign("Joe", token);
             await actor.Defer(token);
@@ -28,18 +27,19 @@ namespace ActorExpirement
             await actor.Assign("Fred", token);
             await actor.Close(token);
 
-            Console.WriteLine("running actor 2");
-            ActorId actorId2 = new ActorId("test2");
+            ActorId actorId2 = new ActorId(Guid.NewGuid().ToString());
             IFSM actor2 = ActorProxy.Create<IFSM>(actorId2, new Uri("fabric:/ActorFSM/FSMActorService"));
-            await actor2.Assign("Joe", token);
-            await actor2.Defer(token);
-            await actor2.Assign("Harry", token);
 
-            Console.WriteLine("waiting for actors to deactivate");
+            Console.WriteLine($"Running actor 2 [{actorId2}] through FSM states");
+            await actor2.Assign("Sally", token);
+            await actor2.Defer(token);
+            await actor2.Assign("Sue", token);
+
+            Console.WriteLine("Waiting for actors to deactivate for 20s (using modified Actor Garbage Collection settings in actor service program.cs)");
             await Task.Delay(TimeSpan.FromSeconds(20));
 
+            Console.WriteLine("Queury Service Fabric to make sure Actors have been Garbage Collected");
             var actorService = ActorServiceProxy.Create(new Uri("fabric:/ActorFSM/FSMActorService"), actorId);
-
             ContinuationToken continuationToken = null;
             IEnumerable<ActorInformation> inactiveActors;
             do
@@ -49,10 +49,10 @@ namespace ActorExpirement
                 continuationToken = queryResult.ContinuationToken;
             } while (continuationToken != null);
 
-            Console.WriteLine("inactive actors are ones we just created");
+            Console.WriteLine("Found the following Inactive actors in the system (should include actors just created):");
             foreach (var actorInformation in inactiveActors)
             {
-                Console.WriteLine(actorInformation.ActorId);
+                Console.WriteLine($"\t {actorInformation.ActorId}");
             }
 
             try
@@ -62,12 +62,13 @@ namespace ActorExpirement
             }
             catch (Exception e)
             {
-                Console.WriteLine("should blow up becuase it is in closed state");
+                Console.WriteLine($"Actor 1 [{actorId}] should throw exception becuase it is in closed state in the FSM");
             }
 
-            Console.WriteLine("actor2 should be able to close");
+            Console.WriteLine($"Actor 2 [{actorId2}] should be able to close in the FSM");
             await actor2.Close(token);
 
+            Console.WriteLine("Press any key to continue...");
             Console.ReadKey();
         }
     }

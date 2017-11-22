@@ -29,7 +29,7 @@ namespace FSM
         private StateMachine<State, Trigger>.TriggerWithParameters<string> assignTrigger;
         private State state;
 
-        enum State { Open, Assigned, Deferred, Resolved, Closed }
+      
         enum Trigger { Assign, Defer, Resolve, Close }
 
         /// <summary>
@@ -83,6 +83,7 @@ namespace FSM
             ActorEventSource.Current.ActorMessage(this, $"Actor state at activation: {this.GetActorId()}, {this.state}");
 
             machine = new StateMachine<State, Trigger>(() => this.state, s => this.state = s);
+            machine.OnTransitionedAsync(LogTransitionAsync);
 
             assignTrigger = machine.SetTriggerParameters<string>(Trigger.Assign);
 
@@ -135,10 +136,39 @@ namespace FSM
             await this.StateManager.SetStateAsync("state", machine.State, cancellationToken);
         }
 
+        private async Task LogTransitionAsync(StateMachine<State, Trigger>.Transition arg)
+        {
+            var conditionalValue = await this.StateManager.TryGetStateAsync<StatusHistory>("statusHistory");
+
+            StatusHistory history;
+            if (conditionalValue.HasValue)
+            {
+                history = StatusHistory.AddNewStatus(arg.Destination, conditionalValue.Value);
+            }
+            else
+            {
+                history = new StatusHistory(arg.Destination);
+            }
+
+            await this.StateManager.SetStateAsync<StatusHistory>("statusHistory", history);
+        }
+
+        public async Task<BugStatus> GetStatus()
+        {
+            var statusHistory = await this.StateManager.TryGetStateAsync<StatusHistory>("statusHistory");
+            var assignee = await this.StateManager.TryGetStateAsync<string>("assignee");
+
+            var status = new BugStatus(this.machine.State);
+            status.History = statusHistory.HasValue ? statusHistory.Value : new StatusHistory(machine.State);
+            status.Assignee = assignee.HasValue ? assignee.Value : string.Empty;
+
+            return status;
+        }
+
         async Task OnAssigned(string assignee)
         {
-            var _assignee = await this.StateManager.TryGetStateAsync<string>("assignee");
-            if (_assignee.HasValue && assignee != _assignee.Value)
+            var previousAssignee = await this.StateManager.TryGetStateAsync<string>("assignee");
+            if (previousAssignee.HasValue && assignee != previousAssignee.Value)
                 await SendEmailToAssignee("Don't forget to help the new employee!");
 
             await this.StateManager.SetStateAsync("assignee", assignee);

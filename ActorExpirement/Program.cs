@@ -27,6 +27,9 @@ namespace ActorExpirement
             await actor.Assign("Fred", token);
             await actor.Close(token);
 
+            var actor1Status = await actor.GetStatus();
+            Console.WriteLine($"Actor 1 [{actorId}] should be closed: {actor1Status.CurrentStatus}");
+
             ActorId actorId2 = new ActorId(Guid.NewGuid().ToString());
             IFSM actor2 = ActorProxy.Create<IFSM>(actorId2, new Uri("fabric:/ActorFSM/FSMActorService"));
 
@@ -34,6 +37,9 @@ namespace ActorExpirement
             await actor2.Assign("Sally", token);
             await actor2.Defer(token);
             await actor2.Assign("Sue", token);
+
+            var actor2Status = await actor2.GetStatus();
+            Console.WriteLine($"Actor 2 [{actorId2}] should be assigned: {actor2Status.CurrentStatus}");
 
             Console.WriteLine("Waiting for actors to deactivate for 20s (using modified Actor Garbage Collection settings in actor service program.cs)");
             await Task.Delay(TimeSpan.FromSeconds(20));

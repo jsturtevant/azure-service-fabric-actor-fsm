@@ -82,6 +82,13 @@ namespace FSM
 
             ActorEventSource.Current.ActorMessage(this, $"Actor state at activation: {this.GetActorId()}, {this.state}");
 
+            ConfigureMachine();
+        }
+
+        private void ConfigureMachine()
+        {
+            // this state machine code is modified from https://github.com/dotnet-state-machine/stateless/tree/dev/example/BugTrackerExample
+            // under the Apache 2.0 license: https://github.com/dotnet-state-machine/stateless/blob/dev/LICENSE
             machine = new StateMachine<State, Trigger>(() => this.state, s => this.state = s);
             machine.OnTransitionedAsync(LogTransitionAsync);
 
@@ -97,7 +104,6 @@ namespace FSM
                 .Permit(Trigger.Close, State.Closed)
                 .Permit(Trigger.Defer, State.Deferred)
                 .OnExitAsync(() => OnDeassigned());
-
 
 
             machine.Configure(State.Deferred)
